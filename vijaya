@@ -1,155 +1,197 @@
-import os
-import hashlib
-import time
-import tkinter as tk
-from tkinter import filedialog, scrolledtext
-import matplotlib.pyplot as plt
+#! /bin/bash
 
-# ----------------------------
-# 1️⃣ Duplicate File Detector
-# ----------------------------
+# ==========================
+# Help Function
+# ==========================
+help_function()
+{
+    echo "$0 provides information about files and folders including size, statistics, duplicate detection, and cleanup suggestion"
+    echo
+    echo "Usage:"
+    echo "$0 [-l location] [-e extension] [-s stats] [-d duplicate] [-c cleanup] [-h help]"
+    echo
+    echo "Options:"
+    echo "-l : Specify location"
+    echo "-e : Specify file extension"
+    echo "-s : Show statistics"
+    echo "-d : Detect duplicate files"
+    echo "-c : Show cleanup suggestions"
+    echo "-h : Show help"
+    echo
+    echo "Examples:"
+    echo "$0"
+    echo "$0 -l /etc"
+    echo "$0 -l /etc -e conf -s"
+    echo "$0 -l /home -d"
+    echo "$0 -l /home -c"
+    echo "$0 -l /home -s -d -c"
+    exit 2
+}
 
-def get_hash(filepath):
-    sha256 = hashlib.sha256()
-    try:
-        with open(filepath, "rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                sha256.update(chunk)
-        return sha256.hexdigest()
-    except:
-        return None
+# ==========================
+# Default Variables
+# ==========================
+LOCATION=$(pwd)
+EXTENSION=""
+STATS=0
+DUPLICATE=0
+CLEANUP=0
 
+# ==========================
+# Argument Processing
+# ==========================
+while [ $# -ne 0 ]
+do
+    case $1 in
 
-def find_duplicates(path):
-    hash_dict = {}
-    duplicates = []
+        -l | --location)
+            LOCATION=$2
+            if [ ! -d "$LOCATION" ]; then
+                echo "Invalid directory"
+                exit 1
+            fi
+            shift 2
+            ;;
 
-    for root, dirs, files in os.walk(path):
-        for file in files:
-            filepath = os.path.join(root, file)
-            file_hash = get_hash(filepath)
+        -e | --extension)
+            EXTENSION=$2
+            shift 2
+            ;;
 
-            if file_hash:
-                if file_hash in hash_dict:
-                    duplicates.append(filepath)
-                else:
-                    hash_dict[file_hash] = filepath
+        -s | --stats)
+            STATS=1
+            shift
+            ;;
 
-    return duplicates
+        -d | --duplicate)
+            DUPLICATE=1
+            shift
+            ;;
 
+        -c | --cleanup)
+            CLEANUP=1
+            shift
+            ;;
 
-# ----------------------------
-# 2️⃣ Rarely Used Files
-# (Not accessed in 180 days)
-# ----------------------------
+        -h | --help)
+            help_function
+            ;;
 
-def find_rare_files(path, days=180):
-    rare_files = []
-    now = time.time()
-    limit = days * 24 * 60 * 60
+        *)
+            echo "Invalid option"
+            help_function
+            ;;
+    esac
+done
 
-    for root, dirs, files in os.walk(path):
-        for file in files:
-            filepath = os.path.join(root, file)
-            try:
-                last_access = os.stat(filepath).st_atime
-                if (now - last_access) > limit:
-                    rare_files.append(filepath)
-            except:
-                continue
+# ==========================
+# Analysis Section
+# ==========================
 
-    return rare_files
+echo "Analyzing location: $LOCATION"
+echo
 
+# Count folders
+FOLDER_COUNT=$(find "$LOCATION" -maxdepth 1 -type d | wc -l)
+FOLDER_COUNT=$((FOLDER_COUNT - 1))
 
-# ----------------------------
-# 3️⃣ Smart Cleanup Suggestion
-# ----------------------------
+# Get file list
+if [ "$EXTENSION" = "" ]; then
+    FILE_LIST=$(find "$LOCATION" -maxdepth 1 -type f)
+else
+    FILE_LIST=$(find "$LOCATION" -maxdepth 1 -type f -name "*.$EXTENSION")
+fi
 
-def smart_cleanup(path):
-    suggestions = []
-    duplicates = find_duplicates(path)
-    rare_files = find_rare_files(path)
+FILE_COUNT=$(echo "$FILE_LIST" | grep -c .)
 
-    for root, dirs, files in os.walk(path):
-        for file in files:
-            filepath = os.path.join(root, file)
-            try:
-                size = os.path.getsize(filepath)
+# Calculate total size
+TOTAL_SIZE=0
 
-                if size > 50 * 1024 * 1024:
-                    suggestions.append(("Large File", filepath))
+for file in $FILE_LIST
+do
+    size=$(stat -c%s "$file")
+    TOTAL_SIZE=$((TOTAL_SIZE + size))
+done
 
-                if filepath in duplicates:
-                    suggestions.append(("Duplicate File", filepath))
+KB=$(echo "scale=2; $TOTAL_SIZE/1024" | bc)
+MB=$(echo "scale=2; $TOTAL_SIZE/1024/1024" | bc)
 
-                if filepath in rare_files:
-                    suggestions.append(("Rarely Used", filepath))
+# Display results
+echo "Number of folders: $FOLDER_COUNT"
+echo "Number of files: $FILE_COUNT"
+echo "Total file size: $TOTAL_SIZE Bytes"
+echo "Total file size: $KB KB"
+echo "Total file size: $MB MB"
 
-            except:
-                continue
+echo
 
-    return duplicates, rare_files, suggestions
+# ==========================
+# Statistics Section
+# ==========================
 
+if [ $STATS -eq 1 ] && [ "$FILE_COUNT" -gt 0 ]; then
 
-# ----------------------------
-# Graph Function
-# ----------------------------
+    SMALLEST_FILE=""
+    LARGEST_FILE=""
+    MIN_SIZE=999999999
+    MAX_SIZE=0
 
-def show_graph(dup, rare, sug):
-    categories = ["Duplicates", "Rare Files", "Suggestions"]
-    values = [len(dup), len(rare), len(sug)]
+    for file in $FILE_LIST
+    do
+        size=$(stat -c%s "$file")
 
-    plt.figure()
-    plt.bar(categories, values)
-    plt.title("Linux File Analyzer Summary")
-    plt.xlabel("Category")
-    plt.ylabel("Count")
-    plt.show()
+        if [ $size -lt $MIN_SIZE ]; then
+            MIN_SIZE=$size
+            SMALLEST_FILE=$(basename "$file")
+        fi
 
+        if [ $size -gt $MAX_SIZE ]; then
+            MAX_SIZE=$size
+            LARGEST_FILE=$(basename "$file")
+        fi
+    done
 
-# ----------------------------
-# GUI
-# ----------------------------
+    echo "Statistics:"
+    echo "Smallest file: $SMALLEST_FILE ($MIN_SIZE Bytes)"
+    echo "Largest file: $LARGEST_FILE ($MAX_SIZE Bytes)"
 
-def analyze_folder():
-    path = filedialog.askdirectory(initialdir="/home")
+    echo
+fi
 
-    if not path.startswith("/"):
-        result.insert(tk.END, "⚠ This tool works only on Linux file system.\n")
-        return
+# ==========================
+# Duplicate File Detection
+# ==========================
 
-    result.delete(1.0, tk.END)
-    result.insert(tk.END, f"Scanning Linux Directory: {path}\n\n")
+if [ $DUPLICATE -eq 1 ]; then
 
-    dup, rare, sug = smart_cleanup(path)
+    echo "Duplicate File Detection:"
+    DUPLICATES=$(find "$LOCATION" -type f -exec md5sum {} + | sort | uniq -w32 -d)
 
-    result.insert(tk.END, "===== DUPLICATE FILES =====\n")
-    for f in dup:
-        result.insert(tk.END, f + "\n")
+    if [ -z "$DUPLICATES" ]; then
+        echo "No duplicate files found"
+    else
+        find "$LOCATION" -type f -exec md5sum {} + | sort | uniq -w32 --all-repeated=separate
+    fi
 
-    result.insert(tk.END, "\n===== RARELY USED FILES =====\n")
-    for f in rare:
-        result.insert(tk.END, f + "\n")
+    echo
+fi
 
-    result.insert(tk.END, "\n===== SMART CLEANUP SUGGESTIONS =====\n")
-    for reason, f in sug:
-        result.insert(tk.END, f"{reason} → {f}\n")
+# ==========================
+# Smart Cleanup Suggestion
+# ==========================
 
-    show_graph(dup, rare, sug)
+if [ $CLEANUP -eq 1 ]; then
 
+    echo "Smart Cleanup Suggestion:"
+    echo "Files not accessed in last 30 days:"
 
-# ----------------------------
-# Main Window (Linux)
-# ----------------------------
+    OLD_FILES=$(find "$LOCATION" -type f -atime +30)
 
-root = tk.Tk()
-root.title("Smart Linux File & Folder Analyzer")
-root.geometry("750x550")
+    if [ -z "$OLD_FILES" ]; then
+        echo "No unused files found"
+    else
+        echo "$OLD_FILES"
+    fi
 
-button = tk.Button(root, text="Select Linux Folder & Analyze", command=analyze_folder)
-button.pack(pady=10)
-
-result = scrolledtext.ScrolledText(root, width=90, height=30)
-result.pack()
-
-root.mainloop()
+    echo
+fi
