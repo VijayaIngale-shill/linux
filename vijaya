@@ -1,0 +1,155 @@
+import os
+import hashlib
+import time
+import tkinter as tk
+from tkinter import filedialog, scrolledtext
+import matplotlib.pyplot as plt
+
+# ----------------------------
+# 1️⃣ Duplicate File Detector
+# ----------------------------
+
+def get_hash(filepath):
+    sha256 = hashlib.sha256()
+    try:
+        with open(filepath, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                sha256.update(chunk)
+        return sha256.hexdigest()
+    except:
+        return None
+
+
+def find_duplicates(path):
+    hash_dict = {}
+    duplicates = []
+
+    for root, dirs, files in os.walk(path):
+        for file in files:
+            filepath = os.path.join(root, file)
+            file_hash = get_hash(filepath)
+
+            if file_hash:
+                if file_hash in hash_dict:
+                    duplicates.append(filepath)
+                else:
+                    hash_dict[file_hash] = filepath
+
+    return duplicates
+
+
+# ----------------------------
+# 2️⃣ Rarely Used Files
+# (Not accessed in 180 days)
+# ----------------------------
+
+def find_rare_files(path, days=180):
+    rare_files = []
+    now = time.time()
+    limit = days * 24 * 60 * 60
+
+    for root, dirs, files in os.walk(path):
+        for file in files:
+            filepath = os.path.join(root, file)
+            try:
+                last_access = os.stat(filepath).st_atime
+                if (now - last_access) > limit:
+                    rare_files.append(filepath)
+            except:
+                continue
+
+    return rare_files
+
+
+# ----------------------------
+# 3️⃣ Smart Cleanup Suggestion
+# ----------------------------
+
+def smart_cleanup(path):
+    suggestions = []
+    duplicates = find_duplicates(path)
+    rare_files = find_rare_files(path)
+
+    for root, dirs, files in os.walk(path):
+        for file in files:
+            filepath = os.path.join(root, file)
+            try:
+                size = os.path.getsize(filepath)
+
+                if size > 50 * 1024 * 1024:
+                    suggestions.append(("Large File", filepath))
+
+                if filepath in duplicates:
+                    suggestions.append(("Duplicate File", filepath))
+
+                if filepath in rare_files:
+                    suggestions.append(("Rarely Used", filepath))
+
+            except:
+                continue
+
+    return duplicates, rare_files, suggestions
+
+
+# ----------------------------
+# Graph Function
+# ----------------------------
+
+def show_graph(dup, rare, sug):
+    categories = ["Duplicates", "Rare Files", "Suggestions"]
+    values = [len(dup), len(rare), len(sug)]
+
+    plt.figure()
+    plt.bar(categories, values)
+    plt.title("Linux File Analyzer Summary")
+    plt.xlabel("Category")
+    plt.ylabel("Count")
+    plt.show()
+
+
+# ----------------------------
+# GUI
+# ----------------------------
+
+def analyze_folder():
+    path = filedialog.askdirectory(initialdir="/home")
+
+    if not path.startswith("/"):
+        result.insert(tk.END, "⚠ This tool works only on Linux file system.\n")
+        return
+
+    result.delete(1.0, tk.END)
+    result.insert(tk.END, f"Scanning Linux Directory: {path}\n\n")
+
+    dup, rare, sug = smart_cleanup(path)
+
+    result.insert(tk.END, "===== DUPLICATE FILES =====\n")
+    for f in dup:
+        result.insert(tk.END, f + "\n")
+
+    result.insert(tk.END, "\n===== RARELY USED FILES =====\n")
+    for f in rare:
+        result.insert(tk.END, f + "\n")
+
+    result.insert(tk.END, "\n===== SMART CLEANUP SUGGESTIONS =====\n")
+    for reason, f in sug:
+        result.insert(tk.END, f"{reason} → {f}\n")
+
+    show_graph(dup, rare, sug)
+
+
+# ----------------------------
+# Main Window (Linux)
+# ----------------------------
+
+root = tk.Tk()
+root.title("Smart Linux File & Folder Analyzer")
+root.geometry("750x550")
+
+button = tk.Button(root, text="Select Linux Folder & Analyze", command=analyze_folder)
+button.pack(pady=10)
+
+result = scrolledtext.ScrolledText(root, width=90, height=30)
+result.pack()
+
+root.mainloop()
