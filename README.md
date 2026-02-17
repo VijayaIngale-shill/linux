@@ -1,6 +1,6 @@
 # linux
 
-Files :-https://github.com/VijayaIngale-shill/linux/blob/a21107d8cdb963ae952024d7afc9f39c411d9aa7/bin.docx
+Files :- bin.docx
 
 #! /bin/bash
 
